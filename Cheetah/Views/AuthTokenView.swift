@@ -18,7 +18,7 @@ struct AuthTokenView: View {
             }
             .privacySensitive()
             .frame(width: 300)
-            Toggle("Use GPT-4 (access required)", isOn: $toggleValue)
+            Toggle("Use GPT-4 (API access required)", isOn: $toggleValue)
             Button("Save") {
                 storedToken = tokenValue
                 useGPT4 = toggleValue
@@ -30,7 +30,7 @@ struct AuthTokenView: View {
     }
 }
 
-struct APIKeyView_Previews: PreviewProvider {
+struct AuthTokenView_Previews: PreviewProvider {
     static var previews: some View {
         return AuthTokenView(
             storedToken: Binding.constant(nil),
