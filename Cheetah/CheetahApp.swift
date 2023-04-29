@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 import LibWhisper
 import CheetahIPC
+import Sparkle
 
 enum AnswerRequest {
     case none
@@ -24,6 +25,7 @@ class AppViewModel: ObservableObject {
     
     @Published var analyzer: ConversationAnalyzer?
     @Published var answerRequest = AnswerRequest.none
+    @Published var errorDescription: String?
     
     @Published var transcript: String?
     @Published var answer: String?
@@ -43,6 +45,8 @@ struct CheetahApp: App {
     @State var ipcServer: IPCServer?
     
     var extensionState = BrowserExtensionState()
+    
+    let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     
     func start() async {
         viewModel.devices = try! CaptureDevice.devices
@@ -67,35 +71,40 @@ struct CheetahApp: App {
         // Install manifest needed for the browser extension to talk to ExtensionHelper
         _ = try? installNativeMessagingManifest()
         
-        do {
-            for try await request in viewModel.$answerRequest.receive(on: RunLoop.main).values {
-                if let analyzer = viewModel.analyzer {
-                    switch request {
-                    case .answerQuestion:
-                        try await analyzer.answer()
-                        viewModel.answer = analyzer.context[.answer]
-                        viewModel.codeAnswer = analyzer.context[.codeAnswer]
-                        viewModel.answerRequest = .none
-                    
-                    case .refineAnswer(let selection):
-                        try await analyzer.answer(refine: true, selection: selection)
-                        viewModel.answer = analyzer.context[.answer]
-                        viewModel.codeAnswer = analyzer.context[.codeAnswer]
-                        viewModel.answerRequest = .none
-                        
-                    case .analyzeCode:
-                        try await analyzer.analyzeCode(extensionState: extensionState)
-                        viewModel.answer = analyzer.context[.answer]
-                        viewModel.answerRequest = .none
-                        
-                    case .none:
-                        break
+        while true {
+            do {
+                for try await request in viewModel.$answerRequest.receive(on: RunLoop.main).values {
+                    if let analyzer = viewModel.analyzer {
+                        switch request {
+                        case .answerQuestion:
+                            try await analyzer.answer()
+                            viewModel.answer = analyzer.context[.answer]
+                            viewModel.codeAnswer = analyzer.context[.codeAnswer]
+                            viewModel.answerRequest = .none
+                            
+                        case .refineAnswer(let selection):
+                            try await analyzer.answer(refine: true, selection: selection)
+                            viewModel.answer = analyzer.context[.answer]
+                            viewModel.codeAnswer = analyzer.context[.codeAnswer]
+                            viewModel.answerRequest = .none
+                            
+                        case .analyzeCode:
+                            try await analyzer.analyzeCode(extensionState: extensionState)
+                            viewModel.answer = analyzer.context[.answer]
+                            viewModel.answerRequest = .none
+                            
+                        case .none:
+                            break
+                        }
                     }
                 }
+            } catch let error as ErrorResult {
+                viewModel.errorDescription = error.message
+                viewModel.answerRequest = .none
+            } catch {
+                viewModel.errorDescription = error.localizedDescription
+                viewModel.answerRequest = .none
             }
-        } catch {
-            viewModel.answerRequest = .none
-            //TODO: handle error
         }
     }
     
@@ -111,6 +120,37 @@ struct CheetahApp: App {
         }
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesView(updater: updaterController.updater)
+            }
+            CommandGroup(replacing: .appSettings) {
+                Button(action: {
+                    viewModel.authToken = nil
+                    resetAfterSettingsChanged()
+                }) {
+                    Text("Change API Key…")
+                }
+                Button(action: {
+                    if viewModel.useGPT4 == true {
+                        viewModel.useGPT4 = false
+                    } else {
+                        viewModel.useGPT4 = true
+                    }
+                    resetAfterSettingsChanged()
+                }) {
+                    Text("Use GPT-4")
+                    if viewModel.useGPT4 == true {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+        }
+    }
+    
+    func resetAfterSettingsChanged() {
+        viewModel.selectedDevice = nil
+        viewModel.analyzer = nil
     }
     
     func setCaptureDevice(_ device: CaptureDevice?) {

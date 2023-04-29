@@ -7,6 +7,9 @@ struct CoachView: View {
     @State var answer: String
     @State var answerSelection = NSRange()
     
+    @State var showError = false
+    @State var errorDescription = ""
+    
     init(viewModel: AppViewModel) {
         self.viewModel = viewModel
         self.answer = viewModel.answer ?? ""
@@ -55,6 +58,17 @@ struct CoachView: View {
                 }
             }
         }
+        .onReceive(viewModel.$errorDescription) {
+            if let error = $0 {
+                self.showError = true
+                self.errorDescription = error
+            }
+        }
+        .alert(errorDescription, isPresented: $showError) {
+            Button("OK", role: .cancel) {
+                self.showError = false
+            }
+        }
         HStack {
             VStack(alignment: .leading, spacing: 20) {
                 if let transcript = viewModel.transcript {
@@ -64,21 +78,26 @@ struct CoachView: View {
                         .font(.footnote.italic())
                 }
                 ScrollView {
-                    NSTextFieldWrapper(text: $answer, selectedRange: $answerSelection)
-                        .onChange(of: viewModel.answer) {
-                            if let newAnswer = $0 {
-                                self.answer = newAnswer
+                    if answer != "" {
+                        NSTextFieldWrapper(text: $answer, selectedRange: $answerSelection)
+                            .onChange(of: viewModel.answer) {
+                                if let newAnswer = $0 {
+                                    self.answer = newAnswer
+                                }
                             }
+                    }
+                    if let solution = viewModel.codeAnswer {
+                        HStack {
+                            Text(solution)
+                                .textSelection(.enabled)
+                                .font(.footnote)
+                                .monospaced()
+                                .lineSpacing(1.2)
+                            Spacer()
                         }
+                    }
                 }
                 .frame(maxHeight: 600)
-                if let solution = viewModel.codeAnswer {
-                    Text(solution)
-                        .textSelection(.enabled)
-                        .font(.footnote)
-                        .monospaced()
-                }
-                Spacer()
             }
             Spacer()
         }
